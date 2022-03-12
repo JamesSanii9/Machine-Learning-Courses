@@ -1,0 +1,1 @@
+Capstone machine learning algorithm was written with minimal time due to dificulties in designing the dataset
