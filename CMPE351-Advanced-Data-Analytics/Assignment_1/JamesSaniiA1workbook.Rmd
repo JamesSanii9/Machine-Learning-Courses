@@ -1,0 +1,432 @@
+---
+title: "351 Assignment 1"
+output: html_notebook
+---
+James Sanii
+20111876
+
+RQ1.1: The two boroughs that will be analyzed in the following analysis are Brooklyn and Manhattan because I want to see data from a working class neighborhood(Brooklyn) and an upperclass neighborhood(Manhattan). Data on neighborhood income to determine class from:  https://www.baruch.cuny.edu/nycdata/income-taxes/med_hhold_income.htm
+
+RQ1.2: Hypothesis: Did COVID-19 impact the SALE.PRICE in the NYC real estate market? If so SALE.DATE should show an increase in the magnitude of correlation with SALE.PRICE and SALE.DATE in 2020 compared to passed years. 
+
+H0(null Hypothesis): There is no significant increase in correlation for how the sale date effects sale price between the years 2018, 2019 and 2020. Will be tested against by see if the magnitude of the correlation coefficient is larger in 2020 compared to past years.
+
+Explanation: If COVID-19 affected the real estate market then the sale date should have a larger impact predicting sale price in 2020 compared to previous years since the market would be reacting to COVID-19 trends. So the value of the correlation coefficient should be significantly different in 2020 if COVID-19 effected the market. Also COVID-19 would start effecting the market at the end of February since COVID-19 was confirmed to be in NYC on February 29th. Link to CDC website for that data: https://www.cdc.gov/mmwr/volumes/69/wr/mm6946a2.htm#:~:text=Phylogenetic%20analysis%20and%20sentinel%20surveillance,was%20diagnosed%20on%20February%2029.
+
+RQ1.3: I am going to use Pearson's correlation Regression since I need to compare the effect that date has on price. Pearson correlation Regression analysis will allow me to compare the effect of sale date to the sale price. If COVID effected the Real Estate market then Sale Date should have a larger impact on Sale Price since that would suggest that the market is reacting to COVID-19 news. For the analysis I am using the datasets for each year. I also am going to remove all data entries with missing or questionable price data. Questionable price data includes $0 sales which means there was a transfer of ownership and other unreasonable sale prices which are likely to indicate the same thing. I also removed entities that are not residential units, this was done by removing entries that were not a taxcode 1 or 2 property. Entries that were incomplete were removed from the dataset in order to do regression analysis.For this strategy to work all variables in the regression analysis need to be normalized.
+
+```{r}
+library("lubridate")
+library(e1071)
+library(dplyr)
+setwd("C:/Users/jcsan/Desktop/3rd year S2/CMPE 351/Assignment 1")
+
+brooklyn18 = read.csv(file="2018_brooklyn.csv", header = TRUE, fill = TRUE)
+brooklyn19 = read.csv(file="2019_brooklyn.csv", header = TRUE, fill = TRUE)
+brooklyn20 = read.csv(file="2020_brooklyn.csv", header = TRUE, fill = TRUE)
+
+sapply(brooklyn18,function(x)sum(is.na(x)))
+sapply(brooklyn19,function(x)sum(is.na(x)))
+sapply(brooklyn20,function(x)sum(is.na(x)))
+
+x<-as.Date("2018-01-01")
+brooklyn18$SALE.DATE. <- as.Date(brooklyn18$SALE.DATE.)
+brooklyn18$SALE.DATE. <- as.numeric(brooklyn18$SALE.DATE. - as.numeric(x))
+x<-as.Date("2019-01-01")
+brooklyn19$SALE.DATE. <- as.Date(brooklyn19$SALE.DATE.)
+brooklyn19$SALE.DATE. <- as.numeric(brooklyn19$SALE.DATE. - as.numeric(x))
+x<-as.Date("2020-01-01")
+brooklyn20$SALE.DATE <- as.Date(brooklyn20$SALE.DATE)
+brooklyn20$SALE.DATE <- as.numeric(brooklyn20$SALE.DATE - as.numeric(x))
+
+brooklyn18$SALE.PRICE. <- as.numeric(gsub('[$,]', '', brooklyn18$SALE.PRICE.))
+brooklyn18<-brooklyn18[!(brooklyn18$SALE.PRICE. < 20),]
+brooklyn19$SALE.PRICE. <- as.numeric(gsub('[$,]', '', brooklyn19$SALE.PRICE.))
+brooklyn19<-brooklyn19[!(brooklyn19$SALE.PRICE. < 20),]
+brooklyn20$SALE.PRICE <- as.numeric(gsub('[$,]', '', brooklyn20$SALE.PRICE))
+brooklyn20<-brooklyn20[!(brooklyn20$SALE.PRICE < 20),]
+
+#remove none residential real estate
+brooklyn18<-brooklyn18[!(brooklyn18$TAX.CLASS.AT.TIME.OF.SALE. > 2),]
+brooklyn19<-brooklyn19[!(brooklyn19$TAX.CLASS.AT.TIME.OF.SALE. > 2),]
+brooklyn20<-brooklyn20[!(brooklyn20$TAX.CLASS.AT.TIME.OF.SALE > 2),]
+
+brooklyn18<-select(brooklyn18, -c(EASE.MENT.))
+brooklyn19<-select(brooklyn19, -c(EASE.MENT.))
+brooklyn20<-select(brooklyn20, -c(EASE.MENT))
+
+#setting residential units and commercial units NA values to 0 since most residential/commercial units would have 0 of the other
+brooklyn18$RESIDENTIAL.UNITS.[is.na(brooklyn18$RESIDENTIAL.UNITS.)] <- 0
+brooklyn19$RESIDENTIAL.UNITS.[is.na(brooklyn19$RESIDENTIAL.UNITS.)] <- 0
+brooklyn20$RESIDENTIAL.UNITS[is.na(brooklyn20$RESIDENTIAL.UNITS)] <- 0
+brooklyn18$COMMERCIAL.UNITS.[is.na(brooklyn18$COMMERCIAL.UNITS.)] <- 0
+brooklyn19$COMMERCIAL.UNITS.[is.na(brooklyn19$COMMERCIAL.UNITS.)] <- 0
+brooklyn20$COMMERCIAL.UNITS[is.na(brooklyn20$COMMERCIAL.UNITS)] <- 0
+
+#I lose a lot of the 2020 dataset due to missing data but keeping the missing points or replacing with mean or median values would greatly effect the model because of the volume of missing data
+final18 <- na.omit(brooklyn18)
+final19 <- na.omit(brooklyn19)
+final20 <- na.omit(brooklyn20)
+
+#remove outliers to fix skewness issue after log transform
+#boxplot used to help identify outliers
+boxplot(final18$SALE.PRICE., horizontal=TRUE, main="Boxplot 2018 of house price")
+boxplot(final19$SALE.PRICE., horizontal=TRUE, main="Boxplot of 2019 house price")
+boxplot(final20$SALE.PRICE, horizontal=TRUE, main="Boxplot of 2020 house price")
+
+final18 <- subset(final18, final18$SALE.PRICE. < quantile(final18$SALE.PRICE., 0.98))
+
+final19 <- subset(final19, final19$SALE.PRICE. < quantile(final19$SALE.PRICE., 0.98))
+
+final20 <- subset(final20, final20$SALE.PRICE < quantile(final20$SALE.PRICE, 0.98))
+
+#shows right skew of SALE.PRICE
+skewness(final18$SALE.PRICE)
+skewness(final19$SALE.PRICE)
+skewness(final20$SALE.PRICE)
+#correct right skewness as much as possible, 2019 and 2020 data are over-corrected and are now left skewed. This was corrected by removing outliers above before doing the log transform
+
+final18$SALE.PRICE <- scale(log(final18$SALE.PRICE),center=TRUE, scale = TRUE)
+final19$SALE.PRICE <- scale(log(final19$SALE.PRICE),center=TRUE, scale = TRUE)
+final20$SALE.PRICE <- scale(log(final20$SALE.PRICE),center=TRUE, scale = TRUE)
+skewness(final18$SALE.PRICE)
+skewness(final19$SALE.PRICE)
+skewness(final20$SALE.PRICE)
+
+#shows SALE.DATE is not skewed
+skewness(final18$SALE.DATE)
+skewness(final19$SALE.DATE)
+skewness(final20$SALE.DATE)
+
+#corelation between date and price
+my_data <- dplyr::select(final18, SALE.DATE., SALE.PRICE.)
+cormatbrooklyn18<-signif(cor(my_data),2)
+cormatbrooklyn18
+
+my_data <- dplyr::select(final19, SALE.DATE., SALE.PRICE.)
+cormatbrooklyn19<-signif(cor(my_data),2)
+cormatbrooklyn19
+
+my_data <- dplyr::select(final20, SALE.DATE, SALE.PRICE)
+cormatbrooklyn20<-signif(cor(my_data),2)
+cormatbrooklyn20
+
+```
+For Brooklyn the correlation coefficient went from negative in 2018 and 2019 to positive in 2020. The magnitude of 2020 coefficient is significantly larger than past years(41 times 2018, 10 times 2019) which signifies that prices changed more throughout the year than previous years. It being positive signifies that sale prices increased over the year whereas past years it has decreased.
+
+Now going to repeat the process for Manhattan data.
+```{r}
+library("lubridate")
+library(e1071)
+library(dplyr)
+setwd("C:/Users/jcsan/Desktop/3rd year S2/CMPE 351/Assignment 1")
+
+manhattan18 = read.csv(file="2018_manhattan.csv", header = TRUE, fill = TRUE)
+manhattan19 = read.csv(file="2019_manhattan.csv", header = TRUE, fill = TRUE)
+manhattan20 = read.csv(file="2020_manhattan.csv", header = TRUE, fill = TRUE)
+
+sapply(manhattan18,function(x)sum(is.na(x)))
+sapply(manhattan19,function(x)sum(is.na(x)))
+sapply(manhattan20,function(x)sum(is.na(x)))
+
+
+
+#standardize date. first day of year = 0 last = 365
+x<-as.Date("2018-01-01")
+manhattan18$SALE.DATE. <- as.Date(manhattan18$SALE.DATE.)
+manhattan18$SALE.DATE. <- as.numeric(manhattan18$SALE.DATE. - as.numeric(x))
+x<-as.Date("2019-01-01")
+manhattan19$SALE.DATE. <- as.Date(manhattan19$SALE.DATE.)
+manhattan19$SALE.DATE. <- as.numeric(manhattan19$SALE.DATE. - as.numeric(x))
+x<-as.Date("2020-01-01")
+manhattan20$SALE.DATE <- as.Date(manhattan20$SALE.DATE)
+manhattan20$SALE.DATE <- as.numeric(manhattan20$SALE.DATE - as.numeric(x))
+
+
+manhattan18$SALE.PRICE. <- as.numeric(gsub('[$,]', '', manhattan18$SALE.PRICE.))
+manhattan18<-manhattan18[!(manhattan18$SALE.PRICE. < 20),]
+manhattan19$SALE.PRICE. <- as.numeric(gsub('[$,]', '', manhattan19$SALE.PRICE.))
+manhattan19<-manhattan19[!(manhattan19$SALE.PRICE. < 20),]
+manhattan20$SALE.PRICE <- as.numeric(gsub('[$,]', '', manhattan20$SALE.PRICE))
+manhattan20<-manhattan20[!(manhattan20$SALE.PRICE < 20),]
+
+manhattan18<-select(manhattan18, -c(EASE.MENT.))
+manhattan19<-select(manhattan19, -c(EASE.MENT.))
+manhattan20<-select(manhattan20, -c(EASE.MENT))
+
+#remove non residential real estate
+manhattan18<-manhattan18[!(manhattan18$TAX.CLASS.AT.TIME.OF.SALE. > 2),]
+manhattan19<-manhattan19[!(manhattan19$TAX.CLASS.AT.TIME.OF.SALE. > 2),]
+manhattan20<-manhattan20[!(manhattan20$TAX.CLASS.AT.TIME.OF.SALE > 2),]
+
+#setting residential units and commercial units NA values to 0 since most residential/commercial units would have 0 of the other
+manhattan18$RESIDENTIAL.UNITS.[is.na(manhattan18$RESIDENTIAL.UNITS.)] <- 0
+manhattan19$RESIDENTIAL.UNITS.[is.na(manhattan19$RESIDENTIAL.UNITS.)] <- 0
+manhattan20$RESIDENTIAL.UNITS[is.na(manhattan20$RESIDENTIAL.UNITS)] <- 0
+manhattan18$COMMERCIAL.UNITS.[is.na(manhattan18$COMMERCIAL.UNITS.)] <- 0
+manhattan19$COMMERCIAL.UNITS.[is.na(manhattan19$COMMERCIAL.UNITS.)] <- 0
+manhattan20$COMMERCIAL.UNITS[is.na(manhattan20$COMMERCIAL.UNITS)] <- 0
+
+final18 <- na.omit(manhattan18)
+final19 <- na.omit(manhattan19)
+final20 <- na.omit(manhattan20)
+
+
+#remove outliers to fix skewness issue after log transform
+boxplot(final18$SALE.PRICE., horizontal=TRUE, main="Boxplot 2018 of house price")
+boxplot(final19$SALE.PRICE., horizontal=TRUE, main="Boxplot of 2019 house price")
+boxplot(final20$SALE.PRICE, horizontal=TRUE, main="Boxplot of 2020 house price")
+
+final19 <- subset(final19, final19$SALE.PRICE. > quantile(final19$SALE.PRICE., 0.001))
+
+final20 <- subset(final20, final20$SALE.PRICE < quantile(final20$SALE.PRICE, 0.98))
+
+
+library(e1071)
+#shows right skew of SALE.PRICE
+skewness(final18$SALE.PRICE)
+skewness(final19$SALE.PRICE)
+skewness(final20$SALE.PRICE)
+#correct right skewness as much as possible, 2019 and 2020 data are over-corrected and are now left skewed. This was corrected by removing outliers above before doing the log transform
+
+final18$SALE.PRICE <- scale(log(final18$SALE.PRICE),center=TRUE, scale = TRUE)
+final19$SALE.PRICE <- scale(log(final19$SALE.PRICE),center=TRUE, scale = TRUE)
+final20$SALE.PRICE <- scale((final20$SALE.PRICE)^(1/3),center=TRUE, scale = TRUE)
+skewness(final18$SALE.PRICE)
+skewness(final19$SALE.PRICE)
+skewness(final20$SALE.PRICE)
+
+#shows SALE.DATE is not skewed
+skewness(final18$SALE.DATE)
+skewness(final19$SALE.DATE)
+skewness(final20$SALE.DATE)
+
+#correlation between date and price
+my_data <- dplyr::select(final18, SALE.DATE., SALE.PRICE.)
+cormatmanhattan18<-signif(cor(my_data),2)
+cormatmanhattan18
+
+my_data <- dplyr::select(final19, SALE.DATE., SALE.PRICE.)
+cormatmanhattan19<-signif(cor(my_data),2)
+cormatmanhattan19
+
+my_data <- dplyr::select(final20, SALE.DATE, SALE.PRICE)
+cormatmanhattan20<-signif(cor(my_data),2)
+cormatmanhattan20
+```
+For Manhatten the correlation coefficient went from positive in 2018 to negative in 2019 to positive in 2020. This signifies that on average sale prices were increasing in 2018 and 2020 but decreasing in 2019. The magnitude of 2020 coefficient is slightly larger than 2018 and around 5 times 2019) which signifies that the rate of change is significantly higher than 2019 but similar to 2018. Which suggests that COVID-19 had a significant impact on increased sale prices in Manhattan by changing the trend of decreasing in 2019 to increasing in 2020. A similar pattern was seen in Brooklyn with prices increasing throughout the year. So the null hypothesis was proven wrong since there was a substantial change in the Value for Brooklyn correlation coefficient in 2020 compared to past years and Manhattan trend was swapped from decreasing the year before back to the increasing trend in 2020 similar to the trend seen in 2018.
+
+Note: The significant change in price over the year 2020 could be because of a change in what type of property is being sold over 2020 and not because COVID-19 increased market value of the properties. This was not tested in the above analysis. The above analysis tested if COVID-19 effected the market, not how did COVID-19 effect the market.
+
+
+Part 2: Feature Selection and Multicollinearity analysis
+
+RQ2.1:I am only going to use the 2020 data since in part Q1 it showed that the importance of SALE.DATE changed significantly between 2020 and past years showing that there can be meaningful differences in correlation of variables depending on which year's dataset is used. So using 2018 and 2019 to train a 2020 prediction model is a bad idea since the correlation coefficients of variables vary significantly.
+
+```{r}
+library(e1071)
+library(dplyr)
+#load files in
+brooklyn20 = read.csv(file="2020_brooklyn.csv", header = TRUE, fill = TRUE)
+manhattan20 = read.csv(file="2020_manhattan.csv", header = TRUE, fill = TRUE)
+names(manhattan20)[names(manhattan20) == "ï..BOROUGH"] <- "BOROUGH"
+
+total <- rbind(brooklyn20, manhattan20)
+
+#RQ2.2 start
+
+#categorical or numerical
+str(total)
+
+
+#feature transformations
+total$SALE.PRICE <- as.numeric(gsub('[$,]', '', total$SALE.PRICE))
+total<-total[!(total$SALE.PRICE < 20),]
+x<-as.Date("2020-01-01")
+total$SALE.DATE <- as.Date(total$SALE.DATE)
+total$SALE.DATE <- as.numeric(total$SALE.DATE - as.numeric(x))
+total<-select(total, -c(EASE.MENT))
+total<-select(total, -c(APARTMENT.NUMBER))
+total<-select(total, -c(NEIGHBORHOOD))
+total<-select(total, -c(ADDRESS))
+total$RESIDENTIAL.UNITS<-as.integer(total$RESIDENTIAL.UNITS)
+total$TOTAL.UNITS <- as.integer(gsub('[$,]', '', total$TOTAL.UNITS))
+total$LAND.SQUARE.FEET <- as.numeric(gsub('[$,]', '', total$LAND.SQUARE.FEET))
+total$GROSS.SQUARE.FEET<- as.numeric(gsub('[$,]', '', total$GROSS.SQUARE.FEET))
+
+#remove non-residential properties
+total<-total[!(total$TAX.CLASS.AT.TIME.OF.SALE > 2),]
+#remove na values and replace them with 0
+total$RESIDENTIAL.UNITS[is.na(total$RESIDENTIAL.UNITS) & !(is.na(total$COMMERCIAL.UNITS))] <- 0
+total$COMMERCIAL.UNITS[is.na(total$COMMERCIAL.UNITS) & !(is.na(total$RESIDENTIAL.UNITS))] <- 0
+
+sapply(total,function(x)sum(is.na(x)))
+
+#remove NA values
+total <- na.omit(total)
+
+#removing the very bottom on price range helps to remove properties being sold below market value to friends/family
+total <- subset(total, total$SALE.PRICE > quantile(total$SALE.PRICE, 0.01))
+
+#Want all variable to have a normal distribution after transform so multicollinearity analysis can be done
+
+#Sale.Price no longer skewed
+total$SALE.PRICE <- log(total$SALE.PRICE)
+skewness((total$SALE.PRICE))
+
+#constant added to the following log transforms to allow transform because otherwise 0 will spit out NA and cause issues
+total$TOTAL.UNITS <- scale(log(total$TOTAL.UNITS+0.00001),center=TRUE, scale = TRUE)
+skewness((total$TOTAL.UNITS))
+
+#commercial units is skewed regardless of which transforms I apply. This variable will not be used in multicolinearity analysis due to not having a normal distribution.
+total$COMMERCIAL.UNITS <- scale(log(total$COMMERCIAL.UNITS+0.01),center=TRUE, scale = TRUE)
+skewness((total$COMMERCIAL.UNITS))
+
+total$RESIDENTIAL.UNITS <- scale(log(total$RESIDENTIAL.UNITS+0.00001),center=TRUE, scale = TRUE)
+skewness((total$RESIDENTIAL.UNITS))
+
+total$LAND.SQUARE.FEET <- scale(log(total$LAND.SQUARE.FEET+0.01),center=TRUE, scale = TRUE)
+skewness((total$LAND.SQUARE.FEET))
+
+total$GROSS.SQUARE.FEET <- scale(log(total$GROSS.SQUARE.FEET+0.05),center=TRUE, scale = TRUE)
+skewness((total$GROSS.SQUARE.FEET))
+
+total$AGE <- 2020-total$YEAR.BUILT
+total$AGE <- scale(((total$AGE )^2),center=TRUE, scale = TRUE)
+skewness((total$AGE))
+
+#Year Built will not normalize!!!
+total$YEAR.BUILT <- scale((log(total$YEAR.BUILT)),center=TRUE, scale = TRUE)
+skewness((total$YEAR.BUILT))
+
+#Sale date
+skewness(total$SALE.DATE)
+
+#tax class will not normalize
+total$TAX.CLASS.AT.TIME.OF.SALE <- scale((log(total$TAX.CLASS.AT.TIME.OF.SALE)),center=TRUE, scale = TRUE)
+skewness((total$TAX.CLASS.AT.TIME.OF.SALE))
+
+skewness(total$BLOCK)
+total$LOT <- log(total$LOT)
+skewness(total$LOT)
+#zipcode will not normalize
+total$ZIP.CODE <- scale(((total$ZIP.CODE)^2),center=TRUE, scale = TRUE)
+skewness(total$ZIP.CODE)
+#borough will not normalize
+total$BOROUGH <- scale((log(total$BOROUGH +1)),center=TRUE, scale = TRUE)
+skewness((total$BOROUGH))
+#use multicollinearity analysis to see which variable have the largest correlation to Sale.Price. Can only use variables that could be transformed to have a normal distribution
+
+my_data <- dplyr::select(total, RESIDENTIAL.UNITS, TOTAL.UNITS, GROSS.SQUARE.FEET,LAND.SQUARE.FEET,AGE, SALE.DATE, BLOCK,LOT,SALE.PRICE)
+cormatTotal<-signif(cor(my_data),2)
+cormatTotal
+```
+RQ2.2 explanation: The features that seem to matter the most are RESIDENTIAL.UNITS, TOTAL.UNITS, GROSS.SQUARE.FEET and BLOCK because they have the largest correlation coefficient magnitude when relating to SALE.PRICE. BLOCK has a negative relation with SALE.PRICE whereas others listed have a positive correlation. LAND.SQUARE.FEET and AGE also have correlation with SALE.PRICE but their magnitudes are about half of the other variables listed above but they have a larger magnitude than the rest of the variables. The features listed above can contribute to predicting the SALE.PRICE since they have the largest correlation coefficients so they are the variables that have the largest effect on SALE.PRICE.
+
+RQ2.3: Using the multicollinearity analysis from RQ2.2.
+
+There are multicollinearity issue with three of the variables since their correlations coefficients with each other are greater than 0.8. RESIDENTIAL.UNITS and TOTAL.UNITS have a 0.960 correlation coefficient which is really high so only one should be used in the regression model. The other overlap is GROSS.SQUARE.FEET and TOTAL.UNITS with a coefficient of 0.890. The correlation coefficient between GROSS.SQUARE.FEET and RESIDENTIAL.UNITS is 0.860. Due to these multicollinearity issues only on of the three will be used. I am going to use GROSS.SQUARE.FEET since the coefficient is the largest of the three for the correlation between themselves and price.
+
+
+RQ2.4
+
+Started with converting SALE.PRICE to a numeric and removing characters that would cause the conversion to fail like '$' and ','
+Then I removed any SALE.PRICE below 20 because those indicated transfers of property not the actual market price of the property.
+
+For SALE.DATE I converted the string to the Date class then converted it to a numeric with the first day of the year subtracted from that numeric. 
+This gave me a time scale for sales starting at 0 for the first day of the year going to 365 for the last day of the year.
+
+I then removed the EASE.MENT and APARTMENT.NUMBER column since is was just filled with NA values. This gave no important data and would cause all entries to be removed if I tried to remove all lines with NA values.
+
+NEIGHBORHOOD and BUILDING.CLASS category are not used in the analysis since the information of Neighborhood should be covered by Borough, Block and Zipcode since those three variables give more information on a places location than Neighborhood does.
+
+ADDRESS is not used since decoding it a into numeric variables using for regression analysis using one-hot encoding would result in a tone of variables each with vary little predictive power which is not good for regression analysis and the majority of the data from an address can be extracted from other variables like Borough, Block and Zipcode since they are all used to describe location.
+
+I then converted RESIDENTIAL.UNITS and TOTAL.UNITS to integers so they could be used in the regression analysis
+
+LAND.SQUARE.FEET and GROSS.SQUARE.FEET were converted from string to numeric to be used in the analysis
+
+I then removed all building that had tax code 3 or 4 since those are not residential units.
+
+Set all NA values for residential and commercial units to 0 if the other had a value since the likely value is 0 since the other one was filled out. 
+
+I then removed all lines with NA values
+
+Then I removed the cheapest 1% of house prices to remove houses being possibly sold way under market value and to allow SALE.PRICE to be normalized without issues. Without removing outliers SALE.PRICE would not have a normal distribution after transforms.
+
+I then tried the transforms taught in class as well as other transforms on the data to give each integer or numeric variable a normal distribution. The following link was helpful at understanding which transforms to use and when to use them: https://medium.com/@TheDataGyan/day-8-data-transformation-skewness-normalization-and-much-more-4c144d370e55
+
+For SALE.PRICE I applied a log transform
+For TOTAL.UNITS, RESIDENTIAL.UNITS, LAND.SQUARE.FEET, GROSS.SQUARE.FEET I added a constant then applied a log transform then a Z-score normalization
+I then created AGE variable which is calculated by 2020 subtract the YEAR.BUILT
+For AGE I applied a square transform then a Z-score normalization
+For SALE.DATE had no transform applied, neither did BLOCK
+For LOT had a log transform applied
+
+Most variables were able to be transformed to have a normal distribution, the exceptions are COMMERCIAL.UNITS, YEAR.BUILT TAX.CLASS.AT.TIME.OF.SALE, ZIPCODE and BOROUGH.
+
+Variables that had 0 values but needed to be log transformed to have a normal distribution had a constant be added before taking the log transform. 
+The constant was modified to be below zero and allow the resulting distribution to not be skewed.
+
+NOTE: A lot of the entries for Manhattan 2020 is missing substantial amounts of data so a substantial amount was cut out. This is not ideal but using predicting without using major variables like GROSS.SQUARE.FEET, LAND.SQUARE.FEET and the variables associated with the number of units is just not reasonable.
+
+PART 3
+
+RQ3.1:
+
+```{r}
+library(Metrics)
+library(MASS)
+#split data into training and testing data
+
+#split in training and testing data as required in RQ2.1
+
+tempvar = sort(sample(nrow(total), nrow(total)*.9))
+train<-total[tempvar,]
+test<-total[-tempvar,]
+
+#create model using key features and the training data
+model1<-lm(formula = SALE.PRICE~GROSS.SQUARE.FEET+LAND.SQUARE.FEET+ AGE+BLOCK, data=train)
+
+model1.training <- predict(model1, train)
+model1.testing <- predict(model1, test)
+
+rmse(train$SALE.PRICE, model1.training)
+rmse(test$SALE.PRICE, model1.testing)
+summary(model1)
+#Creating a second regression model using AIC to choose best attributes
+fit <- lm(SALE.PRICE~RESIDENTIAL.UNITS+TOTAL.UNITS+GROSS.SQUARE.FEET+LAND.SQUARE.FEET+AGE+SALE.DATE+BLOCK+LOT, data=train)
+
+model2<-stepAIC(fit, direction="both")
+model2$anova
+#AIC advises me to keep all of these elements
+
+model2.training <- predict(model2, train)
+model2.testing <- predict(model2, test)
+
+
+
+rmse(train$SALE.PRICE, model2.training)
+rmse(test$SALE.PRICE, model2.testing)
+summary(model2)
+
+#get range of values in the training data
+max(train$SALE.PRICE)
+min(train$SALE.PRICE)
+
+#get range of values in the testing data
+max(test$SALE.PRICE)
+min(test$SALE.PRICE)
+```
+Notes about prediction model: Model1 follows the instructions to build a regression model around the most significant features from part 2. Model2 tries to optimize the regression by eliminating elements that do not help with prediction, normally all elements are kept but this can vary based off the testing data. 
+
+The RMSE is similar in model1 and model2 but model2 seems to perform slightly better on average. I know that model2 performs slightly better on average because its RMSE values are normally lower than model1 for both the training and testing data. StepAIC tries to figure out the optimal subset so it makes sense that the RMSE value will be lower for model2 than model1. 
+
+Looking that the range between the maximum and minimum values of the data is approximately 12 whereas the RMSE values is around 0.88 so the model is an ok fit since the RMSE value is about 7.395% (RMSE/maxSalePrice-minSalePrice)(this will vary based off testing data, calculated with RMSE of 0.88) of the total value range. This means the model can get relatively close to the price but not super close to it. These models would be good for a rough estimate on price but not great otherwise. Note that since the SALE.PRICE is on a logarithmic scale the RMSE is as well so a variation of 0.88 is a relatively large variation in predicted SALE.PRICE.
+
+
+
+
+
+
+
